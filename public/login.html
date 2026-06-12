@@ -262,7 +262,7 @@
                     <i class="fas fa-shield-halved"></i>
                 </div>
                 <h1>Ridera</h1>
-                <p>CDRRMO Dasmariñas Emergency Dispatch</p>
+                <p>ADMIN</p>
             </div>
 
             <form class="login-form" id="loginForm">
@@ -289,126 +289,117 @@
             </form>
 
             <div class="login-footer">
-                <div style="margin-bottom:12px">For emergency support contact your CDRRMO administrator.</div>
+                <div style="margin-bottom:12px">administrator.</div>
                 <div style="color:#515158">© 2026 Ridera Emergency Response · v1.0</div>
             </div>
 
-            <div class="demo-info">
-                <strong>Demo Credentials:</strong><br>
-                Username: <code
-                    style="background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:3px;font-size:11px">responder_001</code><br>
-                Password: Check your agency email
-            </div>
-        </div>
-    </div>
+            <script>
+                'use strict';
 
-    <script>
-        'use strict';
+                const form = document.getElementById('loginForm');
+                const usernameInput = document.getElementById('username');
+                const passwordInput = document.getElementById('password');
+                const submitBtn = document.getElementById('submitBtn');
+                const btnIcon = document.getElementById('btnIcon');
+                const btnText = document.getElementById('btnText');
+                const loginStatus = document.getElementById('loginStatus');
 
-        const form = document.getElementById('loginForm');
-        const usernameInput = document.getElementById('username');
-        const passwordInput = document.getElementById('password');
-        const submitBtn = document.getElementById('submitBtn');
-        const btnIcon = document.getElementById('btnIcon');
-        const btnText = document.getElementById('btnText');
-        const loginStatus = document.getElementById('loginStatus');
+                // Prefill from localStorage (optional)
+                const savedUsername = localStorage.getItem('rideraUsername');
+                if (savedUsername) usernameInput.value = savedUsername;
 
-        // Prefill from localStorage (optional)
-        const savedUsername = localStorage.getItem('rideraUsername');
-        if (savedUsername) usernameInput.value = savedUsername;
-
-        // Clear errors on input
-        [usernameInput, passwordInput].forEach(input => {
-            input.addEventListener('input', () => {
-                input.classList.remove('error');
-                document.getElementById(input.id + 'Error').classList.remove('show');
-                loginStatus.textContent = '';
-                loginStatus.className = '';
-            });
-        });
-
-        // Form submission
-        form.addEventListener('submit', async e => {
-            e.preventDefault();
-
-            const username = usernameInput.value.trim();
-            const password = passwordInput.value;
-
-            // Validation
-            if (!username) {
-                usernameInput.classList.add('error');
-                document.getElementById('usernameError').textContent = 'Username required';
-                document.getElementById('usernameError').classList.add('show');
-                return;
-            }
-
-            if (!password) {
-                passwordInput.classList.add('error');
-                document.getElementById('passwordError').textContent = 'Password required';
-                document.getElementById('passwordError').classList.add('show');
-                return;
-            }
-
-            // Loading state
-            submitBtn.disabled = true;
-            btnIcon.innerHTML = '<span class="spinner"></span>';
-            btnText.textContent = 'Signing in...';
-            loginStatus.textContent = 'Authenticating...';
-            loginStatus.className = 'loading';
-
-            try {
-                // POST to server
-                const response = await fetch('/api/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
+                // Clear errors on input
+                [usernameInput, passwordInput].forEach(input => {
+                    input.addEventListener('input', () => {
+                        input.classList.remove('error');
+                        document.getElementById(input.id + 'Error').classList.remove('show');
+                        loginStatus.textContent = '';
+                        loginStatus.className = '';
+                    });
                 });
 
-                const data = await response.json();
+                // Form submission
+                form.addEventListener('submit', async e => {
+                    e.preventDefault();
 
-                if (response.ok && data.success) {
-                    // Save username for next time
-                    localStorage.setItem('rideraUsername', username);
+                    const username = usernameInput.value.trim();
+                    const password = passwordInput.value;
 
-                    // Success
-                    loginStatus.textContent = `Welcome, ${data.user.username}! Redirecting...`;
-                    loginStatus.className = '';
+                    // Validation
+                    if (!username) {
+                        usernameInput.classList.add('error');
+                        document.getElementById('usernameError').textContent = 'Username required';
+                        document.getElementById('usernameError').classList.add('show');
+                        return;
+                    }
 
-                    // Redirect based on role
-                    setTimeout(() => {
-                        window.location.href = data.redirectTo || '/';
-                    }, 800);
-                } else {
-                    // Auth failed
-                    submitBtn.disabled = false;
-                    btnIcon.innerHTML = '<i class="fas fa-right-to-bracket"></i>';
-                    btnText.textContent = 'Sign In';
-                    loginStatus.textContent = data.error || 'Login failed';
-                    loginStatus.className = 'error';
+                    if (!password) {
+                        passwordInput.classList.add('error');
+                        document.getElementById('passwordError').textContent = 'Password required';
+                        document.getElementById('passwordError').classList.add('show');
+                        return;
+                    }
 
-                    // Highlight password field
-                    passwordInput.classList.add('error');
-                    document.getElementById('passwordError').textContent = 'Invalid credentials';
-                    document.getElementById('passwordError').classList.add('show');
-                }
-            } catch (err) {
-                console.error('Login error:', err);
-                submitBtn.disabled = false;
-                btnIcon.innerHTML = '<i class="fas fa-right-to-bracket"></i>';
-                btnText.textContent = 'Sign In';
-                loginStatus.textContent = 'Network error. Please try again.';
-                loginStatus.className = 'error';
-            }
-        });
+                    // Loading state
+                    submitBtn.disabled = true;
+                    btnIcon.innerHTML = '<span class="spinner"></span>';
+                    btnText.textContent = 'Signing in...';
+                    loginStatus.textContent = 'Authenticating...';
+                    loginStatus.className = 'loading';
 
-        // Focus on load
-        setTimeout(() => usernameInput.focus(), 100);
+                    try {
+                        // POST to server
+                        const response = await fetch('/api/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username, password })
+                        });
 
-        // Enter key support
-        passwordInput.addEventListener('keypress', e => {
-            if (e.key === 'Enter') form.dispatchEvent(new Event('submit'));
-        });
-    </script>
+                        const data = await response.json();
+
+                        if (response.ok && data.success) {
+                            // Save username for next time
+                            localStorage.setItem('rideraUsername', username);
+
+                            // Success
+                            loginStatus.textContent = `Welcome, ${data.user.username}! Redirecting...`;
+                            loginStatus.className = '';
+
+                            // Redirect based on role
+                            setTimeout(() => {
+                                window.location.href = data.redirectTo || '/';
+                            }, 800);
+                        } else {
+                            // Auth failed
+                            submitBtn.disabled = false;
+                            btnIcon.innerHTML = '<i class="fas fa-right-to-bracket"></i>';
+                            btnText.textContent = 'Sign In';
+                            loginStatus.textContent = data.error || 'Login failed';
+                            loginStatus.className = 'error';
+
+                            // Highlight password field
+                            passwordInput.classList.add('error');
+                            document.getElementById('passwordError').textContent = 'Invalid credentials';
+                            document.getElementById('passwordError').classList.add('show');
+                        }
+                    } catch (err) {
+                        console.error('Login error:', err);
+                        submitBtn.disabled = false;
+                        btnIcon.innerHTML = '<i class="fas fa-right-to-bracket"></i>';
+                        btnText.textContent = 'Sign In';
+                        loginStatus.textContent = 'Network error. Please try again.';
+                        loginStatus.className = 'error';
+                    }
+                });
+
+                // Focus on load
+                setTimeout(() => usernameInput.focus(), 100);
+
+                // Enter key support
+                passwordInput.addEventListener('keypress', e => {
+                    if (e.key === 'Enter') form.dispatchEvent(new Event('submit'));
+                });
+            </script>
 </body>
 
 </html>
