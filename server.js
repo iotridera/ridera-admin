@@ -35,8 +35,29 @@ const io = socketio(server, { cors: { origin: '*', methods: ['GET', 'POST'] } })
 let db = null;
 
 try {
-    const keyPath = process.env.FIREBASE_SERVICE_ACCOUNT_KEY || './serviceAccountKey.json';
-    const serviceAccount = require(path.resolve(keyPath));
+    const fs = require('fs');
+
+    // Resolve service account key — check multiple locations:
+    // 1. Explicit env path  2. Render secret file (/etc/secrets/)  3. App root
+    const candidatePaths = [
+        process.env.FIREBASE_SERVICE_ACCOUNT_KEY,
+        '/etc/secrets/serviceAccountKey.json',
+        path.join(__dirname, 'serviceAccountKey.json'),
+        './serviceAccountKey.json'
+    ].filter(Boolean);
+
+    let keyPath = null;
+    for (const p of candidatePaths) {
+        try {
+            if (fs.existsSync(path.resolve(p))) { keyPath = path.resolve(p); break; }
+        } catch (_) { /* skip */ }
+    }
+
+    if (!keyPath) {
+        throw new Error('serviceAccountKey.json not found. Checked: ' + candidatePaths.join(', '));
+    }
+
+    const serviceAccount = require(keyPath);
 
     // Auto-derive database URL from project_id (no .env needed)
     const databaseURL = process.env.FIREBASE_DATABASE_URL
@@ -49,6 +70,7 @@ try {
 
     db = admin.database();
     console.log('✓ Firebase Admin SDK initialized');
+    console.log('  Key path:', keyPath);
     console.log('  Project:', serviceAccount.project_id);
     console.log('  Database:', databaseURL);
 } catch (err) {
