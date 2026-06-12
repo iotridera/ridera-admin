@@ -12,7 +12,13 @@ const path = require('path');
 const cors = require('cors');
 const admin = require('firebase-admin');
 const bcrypt = require('bcryptjs');
+const axios = require('axios');
 require('dotenv').config();
+
+// OTP generator — 6-digit code
+function generateOtp() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -264,6 +270,124 @@ app.put('/api/incidents/:id/status', requireAuth, async (req, res) => {
         console.error('Status update error:', err);
         res.status(500).json({ error: err.message });
     }
+});
+
+// ============================================================
+// PHONE OTP VERIFICATION (Semaphore SMS — PH provider)
+// Used in Add/Edit Responder to prove phone ownership
+// ============================================================
+
+// Normalize PH numbers: 09171234567 / +639171234567 / 639171234567 → 639171234567
+function normalizePhone(phone) {
+    let p = String(phone).replace(/[^\d]/g, '');
+    if (p.startsWith('0')) p = '63' + p.slice(1);
+    if (!p.startsWith('63')) p = '63' + p;
+    return p;
+}
+
+// SEND PHONE OTP
+app.post('/api/send-phone-otp', requireAuth, async (req, res) => {
+    // Only admins can trigger OTP (it's an admin-panel feature)
+    if (req.session.user.role !== 'admin') {
+        return res.status(403).json({ success: false, message: 'Admin only' });
+    }
+
+    const { phone } = req.body;
+    if (!phone) {
+        return res.status(400).json({ success: false, message: 'Phone required' });
+    }
+
+    const normalized = normalizePhone(phone);
+    if (!/^639\d{9}$/.test(normalized)) {
+        return res.status(400).json({ success: false, message: 'Invalid PH mobile number' });
+    }
+
+    const key = normalized;
+
+    // Rate limit: max 1 OTP per number per 60 seconds
+    const existing = (await db.ref('otp/phone/' + key).get()).val();
+    if (existing && existing.sentAt && Date.now() - existing.sentAt < 60 * 1000) {
+        const wait = Math.ceil((60 * 1000 - (Date.now() - existing.sentAt)) / 1000);
+        return res.status(429).json({ success: false, message: `Please wait ${wait}s before resending` });
+    }
+
+    const otp = generateOtp();
+
+    await db.ref('otp/phone/' + key).set({
+        code: otp,
+        sentAt: Date.now(),
+        expiresAt: Date.now() + 5 * 60 * 1000,
+        attempts: 0
+    });
+
+    try {
+        await axios.post(
+            'https://api.semaphore.co/api/v4/otp',
+            {
+                apikey: process.env.SEMAPHORE_API_KEY,
+                number: normalized,
+                message: 'Your Ridera verification code is {otp}. Valid for 5 minutes.',
+                code: otp,
+                sendername: process.env.SEMAPHORE_SENDER_NAME || 'RIDERA'
+            },
+            { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
+        );
+
+        console.log('✓ OTP sent to:', normalized);
+        return res.json({ success: true, phone: normalized });
+    } catch (error) {
+        console.log('✗ SEMAPHORE ERROR:', error.response?.data || error.message);
+        await db.ref('otp/phone/' + key).remove();
+        return res.status(500).json({ success: false, message: 'SMS sending failed. Check Semaphore credits/API key.' });
+    }
+});
+
+// VERIFY PHONE OTP
+app.post('/api/verify-phone-otp', requireAuth, async (req, res) => {
+    if (req.session.user.role !== 'admin') {
+        return res.status(403).json({ verified: false, message: 'Admin only' });
+    }
+
+    const { phone, code } = req.body;
+    if (!phone || !code) {
+        return res.status(400).json({ verified: false, message: 'Phone and code required' });
+    }
+
+    const key = normalizePhone(phone);
+    const ref = db.ref('otp/phone/' + key);
+    const snap = await ref.get();
+    const data = snap.val();
+
+    if (!data) {
+        return res.json({ verified: false, message: 'No OTP found. Please request a new code.' });
+    }
+
+    // Expired
+    if (Date.now() > data.expiresAt) {
+        await ref.remove();
+        return res.json({ verified: false, message: 'OTP expired. Please request a new code.' });
+    }
+
+    // Brute-force guard: max 5 wrong attempts
+    if ((data.attempts || 0) >= 5) {
+        await ref.remove();
+        return res.json({ verified: false, message: 'Too many attempts. Please request a new code.' });
+    }
+
+    // Wrong code
+    if (String(data.code) !== String(code).trim()) {
+        await ref.child('attempts').set((data.attempts || 0) + 1);
+        return res.json({ verified: false, message: 'Invalid OTP' });
+    }
+
+    // Success — consume OTP and mark phone as verified
+    await ref.remove();
+    await db.ref('otp/verified_phones/' + key).set({
+        verifiedAt: Date.now(),
+        verifiedBy: req.session.user.username
+    });
+
+    return res.json({ verified: true, phone: key });
 });
 
 // Health check

@@ -1,4 +1,4 @@
-# 🚨 Ridera Responder — CDRRMO Dasmariñas
+# 🚨 Ridera Admin — Ridera Team
 
 **Emergency Response Dashboard with Real-Time Motorcycle Crash Monitoring**
 
@@ -7,7 +7,7 @@
 ## 📋 Project Structure
 
 ```
-ridera-responder/
+ridera-admin/
 ├── server.js                          # Main Express server
 ├── package.json                       # Dependencies
 ├── .env                               # Environment variables (create from .env.example)
@@ -40,8 +40,8 @@ ridera-responder/
 
 ```bash
 # Clone or download the project
-git clone <your-repo-url> ridera-responder
-cd ridera-responder
+git clone <your-repo-url> ridera-admin
+cd ridera-admin
 
 # Install dependencies
 npm install
@@ -408,7 +408,7 @@ Check browser console for errors. Verify CORS settings in `server.js`.
 
 ### Heroku
 ```bash
-heroku create ridera-responder
+heroku create ridera-admin
 git push heroku main
 heroku config:set FIREBASE_SERVICE_ACCOUNT_KEY='<json_content>'
 heroku logs --tail
@@ -424,8 +424,8 @@ curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # Clone repo
-git clone <url> ridera-responder
-cd ridera-responder
+git clone <url> ridera-admin
+cd ridera-admin
 
 # Install PM2 (process manager)
 npm install -g pm2

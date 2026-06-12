@@ -804,7 +804,29 @@ function responderForm(id, isAdd) {
                 ${inputField('rp-station', 'Station Name', r.station_name)}
                 ${inputField('rp-coverage', 'Coverage Area', r.coverage_area)}
                 ${inputField('rp-address', 'Address', r.address)}
-                ${inputField('rp-phone', 'Phone', r.phone)}
+
+                <!-- Phone + OTP verification -->
+                <div class="form-group">
+                    <label class="form-label" for="rp-phone">Phone (must be verified) *</label>
+                    <div style="display:flex;gap:8px">
+                        <input id="rp-phone" class="admin-input" type="text" value="${esc(r.phone || '')}" placeholder="09171234567" style="flex:1" />
+                        <button type="button" class="btn btn-ghost" id="rp-send-otp" style="white-space:nowrap">
+                            <i class="fas fa-paper-plane"></i> Send OTP
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group" id="rp-otp-group" style="display:none">
+                    <label class="form-label" for="rp-otp">Enter 6-digit code sent via SMS</label>
+                    <div style="display:flex;gap:8px">
+                        <input id="rp-otp" class="admin-input" type="text" maxlength="6" placeholder="••••••" style="flex:1;letter-spacing:4px;text-align:center;font-weight:700" />
+                        <button type="button" class="btn btn-danger" id="rp-verify-otp" style="white-space:nowrap">
+                            <i class="fas fa-check"></i> Verify
+                        </button>
+                    </div>
+                </div>
+                <div id="rp-phone-status" style="font-size:12px;display:flex;align-items:center;gap:6px;color:var(--text-muted)">
+                    ${r.phone_verified ? '<i class="fas fa-circle-check" style="color:var(--low)"></i> <span style="color:var(--low)">Phone verified</span>' : '<i class="fas fa-circle-info"></i> Phone not yet verified'}
+                </div>
             </div>
         </div>
         <div class="drawer-section">
@@ -823,13 +845,126 @@ function responderForm(id, isAdd) {
 
     pendingSave = () => saveResponder(id, isAdd);
     document.getElementById('adminSaveBtn').addEventListener('click', () => pendingSave && pendingSave());
+
+    // ---- OTP wiring ----
+    // Verified state: existing responder with unchanged phone counts as verified
+    window._otpVerifiedPhone = (!isAdd && r.phone_verified) ? normalizePhoneJS(r.phone || '') : null;
+
+    const sendBtn = document.getElementById('rp-send-otp');
+    const verifyBtn = document.getElementById('rp-verify-otp');
+    const otpGroup = document.getElementById('rp-otp-group');
+    const statusEl = document.getElementById('rp-phone-status');
+    const phoneEl = document.getElementById('rp-phone');
+
+    // If phone changes after verification, invalidate it
+    phoneEl.addEventListener('input', () => {
+        if (window._otpVerifiedPhone && normalizePhoneJS(phoneEl.value) !== window._otpVerifiedPhone) {
+            window._otpVerifiedPhone = null;
+            statusEl.innerHTML = '<i class="fas fa-circle-info"></i> Phone changed — verification required';
+        }
+    });
+
+    sendBtn.addEventListener('click', async () => {
+        const phone = phoneEl.value.trim();
+        if (!phone) { showToast('Validation', 'Enter a phone number first.', 'warn'); return; }
+
+        sendBtn.disabled = true;
+        sendBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sending...';
+
+        try {
+            const resp = await fetch('/api/send-phone-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone })
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+                otpGroup.style.display = 'flex';
+                statusEl.innerHTML = '<i class="fas fa-paper-plane" style="color:var(--info)"></i> <span style="color:var(--info)">Code sent! Check SMS.</span>';
+                showToast('OTP Sent', `Verification code sent to ${data.phone}.`);
+                // 60s resend cooldown
+                let secs = 60;
+                sendBtn.innerHTML = `Resend (${secs}s)`;
+                const timer = setInterval(() => {
+                    secs--;
+                    if (secs <= 0) {
+                        clearInterval(timer);
+                        sendBtn.disabled = false;
+                        sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Resend OTP';
+                    } else {
+                        sendBtn.innerHTML = `Resend (${secs}s)`;
+                    }
+                }, 1000);
+            } else {
+                sendBtn.disabled = false;
+                sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send OTP';
+                showToast('OTP Failed', data.message || 'Could not send SMS.', 'error');
+            }
+        } catch (e) {
+            sendBtn.disabled = false;
+            sendBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Send OTP';
+            showToast('Network Error', e.message, 'error');
+        }
+    });
+
+    verifyBtn.addEventListener('click', async () => {
+        const phone = phoneEl.value.trim();
+        const code = document.getElementById('rp-otp').value.trim();
+        if (!code || code.length !== 6) { showToast('Validation', 'Enter the 6-digit code.', 'warn'); return; }
+
+        verifyBtn.disabled = true;
+        verifyBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+        try {
+            const resp = await fetch('/api/verify-phone-otp', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, code })
+            });
+            const data = await resp.json();
+
+            verifyBtn.disabled = false;
+            verifyBtn.innerHTML = '<i class="fas fa-check"></i> Verify';
+
+            if (data.verified) {
+                window._otpVerifiedPhone = data.phone;
+                otpGroup.style.display = 'none';
+                statusEl.innerHTML = '<i class="fas fa-circle-check" style="color:var(--low)"></i> <span style="color:var(--low)">Phone verified!</span>';
+                showToast('Phone Verified', 'This number is confirmed.');
+            } else {
+                statusEl.innerHTML = `<i class="fas fa-circle-xmark" style="color:var(--high)"></i> <span style="color:var(--high)">${esc(data.message || 'Invalid OTP')}</span>`;
+                showToast('Verification Failed', data.message || 'Invalid OTP', 'error');
+            }
+        } catch (e) {
+            verifyBtn.disabled = false;
+            verifyBtn.innerHTML = '<i class="fas fa-check"></i> Verify';
+            showToast('Network Error', e.message, 'error');
+        }
+    });
+}
+
+// Same normalization as server: 0917... → 63917...
+function normalizePhoneJS(phone) {
+    let p = String(phone).replace(/[^\d]/g, '');
+    if (p.startsWith('0')) p = '63' + p.slice(1);
+    if (!p.startsWith('63')) p = '63' + p;
+    return p;
 }
 
 function saveResponder(id, isAdd) {
     const username = val('rp-username');
     const password = val('rp-password');
+    const phone = val('rp-phone');
     if (!username) { showToast('Validation', 'Username is required.', 'warn'); return; }
     if (isAdd && !password) { showToast('Validation', 'Password is required for new responder.', 'warn'); return; }
+    if (!phone) { showToast('Validation', 'Phone number is required.', 'warn'); return; }
+
+    // BLOCK save if phone is not OTP-verified
+    if (!window._otpVerifiedPhone || normalizePhoneJS(phone) !== window._otpVerifiedPhone) {
+        showToast('Phone Not Verified', 'Send and verify the OTP first before saving.', 'warn');
+        return;
+    }
 
     const data = {
         username,
@@ -838,7 +973,8 @@ function saveResponder(id, isAdd) {
         station_name: val('rp-station'),
         coverage_area: val('rp-coverage'),
         address: val('rp-address'),
-        phone: val('rp-phone'),
+        phone: normalizePhoneJS(phone),
+        phone_verified: true,
         latitude: parseFloat(val('rp-lat')) || 0,
         longitude: parseFloat(val('rp-lng')) || 0,
         is_active: document.getElementById('rp-active')?.checked ?? true,
